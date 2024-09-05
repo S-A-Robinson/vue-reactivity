@@ -1,22 +1,31 @@
 const targetMap = new WeakMap() // stores a list of dependency maps that will run effects when updated
+let activeEffect = null
+
+function effect(eff) {
+  activeEffect = eff
+  activeEffect()
+  activeEffect = null
+}
 
 // Keeps track of all the dependency maps in targetMap
 function track(target, key) {
-  // Check this dependency map is being tracked
-  let depsMap = targetMap.get(target)
-  if (!depsMap) {
-    // If we didn't find a dependency map then we create one
-    targetMap.set(target, (depsMap = new Map()))
-  }
+  if (activeEffect) {
+    // Check this dependency map is being tracked
+    let depsMap = targetMap.get(target)
+    if (!depsMap) {
+      // If we didn't find a dependency map then we create one
+      targetMap.set(target, (depsMap = new Map()))
+    }
 
-  // Check the dependency map has the dependency
-  let dep = depsMap.get(key)
-  if (!dep) {
-    // If it doesn't then create one
-    depsMap.set(key, (dep = new Set()))
+    // Check the dependency map has the dependency
+    let dep = depsMap.get(key)
+    if (!dep) {
+      // If it doesn't then create one
+      depsMap.set(key, (dep = new Set()))
+    }
+    // Add the effect to the dependency
+    dep.add(activeEffect)
   }
-  // Add the effect to the dependency
-  dep.add(effect)
 }
 
 // Triggers all effects to be run in the given dependency
@@ -56,16 +65,43 @@ function reactive(target) {
   return new Proxy(target, handler)
 }
 
-let product = reactive({ price: 5, quantity: 2 })
-let total = 0
-
-let effect = () => {
-  total = product.price * product.quantity
+function ref(raw) {
+  const r = {
+    get value() {
+      track(r, 'value')
+      return raw
+    },
+    set value(newVal) {
+      raw = newVal
+      trigger(r, 'value')
+    },
+  }
+  return r
 }
 
-effect()
-console.log(total)
+let product = reactive({ price: 5, quantity: 2 })
+let salePrice = ref(0)
+let total = 0
+
+effect(() => {
+  salePrice.value = product.price * 0.9
+})
+effect(() => {
+  total = salePrice.value * product.quantity
+})
+
+console.log(
+  `Before updated total (should be 9) = ${total} salePrice (should be 4.5) = ${salePrice.value}`
+)
 
 product.quantity = 3
 
-console.log(total)
+console.log(
+  `After updated total (should be 13.5) = ${total} salePrice (should be 4.5) = ${salePrice.value}`
+)
+
+product.price = 10
+
+console.log(
+  `After updated total (should be 27) = ${total} salePrice (should be 9) = ${salePrice.value}`
+)
